@@ -1,0 +1,24 @@
+dist: bionic
+sudo: required
+
+services:
+  - docker
+
+install:
+  - curl -fsSL https://download.docker.com/linux/static/stable/x86_64/docker-19.03.12.tgz | sudo tar xzv --strip-components=1 -C /usr/local/bin docker/docker
+  - sudo mkdir -p /usr/local/lib/docker/cli-plugins
+  - curl -fsSL  https://github.com/docker/buildx/releases/download/v0.4.1/buildx-v0.4.1.linux-amd64 | sudo tee /usr/local/lib/docker/cli-plugins/docker-buildx > /dev/null
+  - sudo chmod +x /usr/local/lib/docker/cli-plugins/docker-buildx
+  - docker buildx create --use
+  - docker buildx inspect --bootstrap
+  - docker buildx install
+
+env:
+  - GO_VERSION=1.13
+  - GO_VERSION=1.14
+
+script:
+  - docker buildx bake --progress=plain
+  - docker buildx bake --progress=plain test
+  - docker buildx bake --progress=plain lint validate-gomod validate-shfmt
+  - docker buildx bake --progress=plain cross

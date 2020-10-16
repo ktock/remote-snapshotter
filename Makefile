@@ -36,6 +36,9 @@ containerd-stargz-grpc: FORCE
 ctr-remote: FORCE
 	GO111MODULE=$(GO111MODULE_VALUE) go build -o $(PREFIX)$@ $(GO_BUILD_FLAGS) -v ./cmd/ctr-remote
 
+docker-optimize: FORCE
+	GO111MODULE=$(GO111MODULE_VALUE) go build -o $(PREFIX)$@ $(GO_BUILD_FLAGS) -v ./cmd/docker-optimize
+
 check:
 	@echo "$@"
 	@GO111MODULE=$(GO111MODULE_VALUE) golangci-lint run

@@ -83,7 +83,7 @@ ARG TARGETARCH
 ARG BUILDKIT_VERSION
 
 RUN apt-get update -y && \
-    apt-get --no-install-recommends install -y jq iptables && \
+    apt-get --no-install-recommends install -y jq iptables zstd && \
     GO111MODULE=on go get github.com/google/go-containerregistry/cmd/crane && \
     mkdir -p /opt/tmp/cni/bin /etc/tmp/cni/net.d && \
     curl -Ls https://github.com/containernetworking/plugins/releases/download/${CNI_VERSION}/cni-plugins-linux-\${TARGETARCH:-amd64}-${CNI_VERSION}.tgz | tar xzv -C /opt/tmp/cni/bin && \
@@ -104,6 +104,8 @@ echo "Testing..."
 function test_optimize {
     local OPTIMIZE_COMMAND="${1}"
     local NO_OPTIMIZE_COMMAND="${2}"
+    local GETTOCDIGEST_COMMAND="${3}"
+    local INVISIBLE_TOC="${4}"
     cat <<EOF > "${DOCKER_COMPOSE_YAML}"
 version: "3.3"
 services:
@@ -117,6 +119,8 @@ services:
     - NO_PROXY=127.0.0.1,localhost,${REGISTRY_HOST}:443
     - OPTIMIZE_COMMAND=${OPTIMIZE_COMMAND}
     - NO_OPTIMIZE_COMMAND=${NO_OPTIMIZE_COMMAND}
+    - GETTOCDIGEST_COMMAND=${GETTOCDIGEST_COMMAND}
+    - INVISIBLE_TOC=${INVISIBLE_TOC}
     tmpfs:
     - /tmp:exec,mode=777
     volumes:
@@ -155,6 +159,14 @@ EOF
     fi
 }
 
-test_optimize "image optimize --oci" "image optimize --no-optimize --oci"
+test_optimize "image optimize --oci --zstdchunked" \
+              "image optimize --no-optimize --oci --zstdchunked" \
+              "image gettocdigest --zstdchunked" \
+              "true"
+
+test_optimize "image optimize --oci" \
+              "image optimize --no-optimize --oci" \
+              "image gettocdigest" \
+              "false"
 
 exit 0

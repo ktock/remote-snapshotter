@@ -31,7 +31,12 @@ func init() {
 }
 
 func main() {
-	customCommands := []cli.Command{commands.RpullCommand, commands.OptimizeCommand, commands.ConvertCommand}
+	customCommands := []cli.Command{
+		commands.RpullCommand,
+		commands.OptimizeCommand,
+		commands.ConvertCommand,
+		commands.GetTOCDigestCommand,
+	}
 	app := app.New()
 	for i := range app.Commands {
 		if app.Commands[i].Name == "images" {

@@ -26,7 +26,6 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
-	"encoding/json"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -47,6 +46,7 @@ type options struct {
 	compressionLevel       int
 	prioritizedFiles       []string
 	missedPrioritizedFiles *[]string
+	compression            Compression
 }
 
 type Option func(o *options) error
@@ -94,6 +94,15 @@ func WithAllowPrioritizeNotFound(missedFiles *[]string) Option {
 	}
 }
 
+// WithCompression specifies compression algorithm to be used.
+// Default is gzip.
+func WithCompression(compression Compression) Option {
+	return func(o *options) error {
+		o.compression = compression
+		return nil
+	}
+}
+
 // Blob is an eStargz blob.
 type Blob struct {
 	io.ReadCloser
@@ -125,6 +134,12 @@ func Build(tarBlob *io.SectionReader, opt ...Option) (_ *Blob, rErr error) {
 			return nil, err
 		}
 	}
+	if opts.compression == nil {
+		opts.compression = &gzipCompression{
+			&GzipCompressor{opts.compressionLevel},
+			&GzipDecompressor{},
+		}
+	}
 	layerFiles := newTempFiles()
 	defer func() {
 		if rErr != nil {
@@ -150,7 +165,7 @@ func Build(tarBlob *io.SectionReader, opt ...Option) (_ *Blob, rErr error) {
 			if err != nil {
 				return err
 			}
-			sw := NewWriterLevel(esgzFile, opts.compressionLevel)
+			sw := NewWriterWithCompressor(esgzFile, opts.compression)
 			sw.ChunkSize = opts.chunkSize
 			if err := sw.AppendTar(readerFromEntries(parts...)); err != nil {
 				return err
@@ -182,11 +197,12 @@ func Build(tarBlob *io.SectionReader, opt ...Option) (_ *Blob, rErr error) {
 	diffID := digest.Canonical.Digester()
 	pr, pw := io.Pipe()
 	go func() {
-		r, err := gzip.NewReader(io.TeeReader(io.MultiReader(append(rs, tocAndFooter)...), pw))
+		r, err := opts.compression.Reader(io.TeeReader(io.MultiReader(append(rs, tocAndFooter)...), pw))
 		if err != nil {
 			pw.CloseWithError(err)
 			return
 		}
+		defer r.Close()
 		if _, err := io.Copy(diffID.Hash(), r); err != nil {
 			pw.CloseWithError(err)
 			return
@@ -208,7 +224,7 @@ func Build(tarBlob *io.SectionReader, opt ...Option) (_ *Blob, rErr error) {
 // Writers doesn't write TOC and footer to the underlying writers so they can be
 // combined into a single eStargz and tocAndFooter returned by this function can
 // be appended at the tail of that combined blob.
-func closeWithCombine(compressionLevel int, ws ...*Writer) (tocAndFooter io.Reader, tocDgst digest.Digest, err error) {
+func closeWithCombine(compressionLevel int, ws ...*Writer) (tocAndFooterR io.Reader, tocDgst digest.Digest, err error) {
 	if len(ws) == 0 {
 		return nil, "", fmt.Errorf("at least one writer must be passed")
 	}
@@ -225,7 +241,7 @@ func closeWithCombine(compressionLevel int, ws ...*Writer) (tocAndFooter io.Read
 		}
 	}
 	var (
-		mtoc          = new(jtoc)
+		mtoc          = new(JTOC)
 		currentOffset int64
 	)
 	mtoc.Version = ws[0].toc.Version
@@ -243,40 +259,16 @@ func closeWithCombine(compressionLevel int, ws ...*Writer) (tocAndFooter io.Read
 		currentOffset += w.cw.n
 	}
 
-	tocJSON, err := json.MarshalIndent(mtoc, "", "\t")
+	return tocAndFooter(ws[0].compressor, mtoc, currentOffset)
+}
+
+func tocAndFooter(compressor Compressor, toc *JTOC, offset int64) (io.Reader, digest.Digest, error) {
+	buf := new(bytes.Buffer)
+	tocDigest, err := compressor.WriteTOCAndFooter(buf, offset, toc, nil)
 	if err != nil {
 		return nil, "", err
 	}
-	pr, pw := io.Pipe()
-	go func() {
-		zw, _ := gzip.NewWriterLevel(pw, compressionLevel)
-		tw := tar.NewWriter(zw)
-		if err := tw.WriteHeader(&tar.Header{
-			Typeflag: tar.TypeReg,
-			Name:     TOCTarName,
-			Size:     int64(len(tocJSON)),
-		}); err != nil {
-			pw.CloseWithError(err)
-			return
-		}
-		if _, err := tw.Write(tocJSON); err != nil {
-			pw.CloseWithError(err)
-			return
-		}
-		if err := tw.Close(); err != nil {
-			pw.CloseWithError(err)
-			return
-		}
-		if err := zw.Close(); err != nil {
-			pw.CloseWithError(err)
-			return
-		}
-		pw.Close()
-	}()
-	return io.MultiReader(
-		pr,
-		bytes.NewReader(footerBytes(currentOffset)),
-	), digest.FromBytes(tocJSON), nil
+	return buf, tocDigest, nil
 }
 
 // divideEntries divides passed entries to the parts at least the number specified by the

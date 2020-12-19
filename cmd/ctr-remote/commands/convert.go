@@ -27,7 +27,9 @@ import (
 	"github.com/containerd/containerd/images/converter/uncompress"
 	"github.com/containerd/containerd/platforms"
 	"github.com/containerd/stargz-snapshotter/estargz"
+	"github.com/containerd/stargz-snapshotter/nativeconverter"
 	estargzconvert "github.com/containerd/stargz-snapshotter/nativeconverter/estargz"
+	zstdchunkedconvert "github.com/containerd/stargz-snapshotter/nativeconverter/zstdchunked"
 	"github.com/containerd/stargz-snapshotter/recorder"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
@@ -66,6 +68,11 @@ When '--all-platforms' is given all images in a manifest list must be available.
 			Usage: "eStargz chunk size",
 			Value: 0,
 		},
+		// zstd:chunked flags
+		cli.BoolFlag{
+			Name:  "zstdchunked",
+			Usage: "use zstd compression instead of gzip (a.k.a zstd:chunked). Must be used in conjunction with '--oci'.",
+		},
 		// generic flags
 		cli.BoolFlag{
 			Name:  "uncompress",
@@ -96,7 +103,10 @@ When '--all-platforms' is given all images in a manifest list must be available.
 			return errors.New("src and target image need to be specified")
 		}
 
-		if !context.Bool("all-platforms") {
+		var platformMC platforms.MatchComparer
+		if context.Bool("all-platforms") {
+			platformMC = platforms.All
+		} else {
 			if pss := context.StringSlice("platform"); len(pss) > 0 {
 				var all []ocispec.Platform
 				for _, ps := range pss {
@@ -106,31 +116,57 @@ When '--all-platforms' is given all images in a manifest list must be available.
 					}
 					all = append(all, p)
 				}
-				convertOpts = append(convertOpts, converter.WithPlatform(platforms.Ordered(all...)))
+				platformMC = platforms.Ordered(all...)
 			} else {
-				convertOpts = append(convertOpts, converter.WithPlatform(platforms.DefaultStrict()))
+				platformMC = platforms.DefaultStrict()
 			}
 		}
+		convertOpts = append(convertOpts, converter.WithPlatform(platformMC))
 
+		var layerConvertFunc converter.ConvertFunc
 		if context.Bool("estargz") {
 			esgzOpts, err := getESGZConvertOpts(context)
 			if err != nil {
 				return err
 			}
-			convertOpts = append(convertOpts, converter.WithLayerConvertFunc(estargzconvert.LayerConvertFunc(esgzOpts...)))
+			layerConvertFunc = estargzconvert.LayerConvertFunc(esgzOpts...)
 			if !context.Bool("oci") {
 				logrus.Warn("option --estargz should be used in conjunction with --oci")
 			}
 			if context.Bool("uncompress") {
 				return errors.New("option --estargz conflicts with --uncompress")
 			}
+			if context.Bool("zstdchunked") {
+				return errors.New("option --estargz conflicts with --zstdchunked")
+			}
+		}
+
+		if context.Bool("zstdchunked") {
+			esgzOpts, err := getESGZConvertOpts(context)
+			if err != nil {
+				return err
+			}
+			layerConvertFunc = zstdchunkedconvert.LayerConvertFunc(esgzOpts...)
+			if !context.Bool("oci") {
+				return errors.New("option --zstdchunked must be used in conjunction with --oci")
+			}
+			if context.Bool("uncompress") {
+				return errors.New("option --zstdchunked conflicts with --uncompress")
+			}
 		}
 
 		if context.Bool("uncompress") {
-			convertOpts = append(convertOpts, converter.WithLayerConvertFunc(uncompress.LayerConvertFunc))
+			layerConvertFunc = uncompress.LayerConvertFunc
 		}
 
+		if layerConvertFunc == nil {
+			return errors.New("specify layer converter")
+		}
+		convertOpts = append(convertOpts, converter.WithLayerConvertFunc(layerConvertFunc))
+
+		var docker2oci bool
 		if context.Bool("oci") {
+			docker2oci = true
 			convertOpts = append(convertOpts, converter.WithDockerToOCI(true))
 		}
 
@@ -140,6 +176,10 @@ When '--all-platforms' is given all images in a manifest list must be available.
 		}
 		defer cancel()
 
+		convertOpts = append(convertOpts, converter.WithIndexConvertFunc(
+			// index converter patched for zstd compression
+			// TODO: upstream this to containerd/containerd
+			nativeconverter.IndexConvertFunc(layerConvertFunc, docker2oci, platformMC)))
 		newImg, err := converter.Convert(ctx, client, targetRef, srcRef, convertOpts...)
 		if err != nil {
 			return err

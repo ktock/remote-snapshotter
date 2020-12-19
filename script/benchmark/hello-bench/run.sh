@@ -19,6 +19,7 @@ set -euo pipefail
 LEGACY_MODE="legacy"
 ESTARGZ_NOOPT_MODE="estargz-noopt"
 ESTARGZ_MODE="estargz"
+ZSTDCHUNKED_MODE="zstdchunked"
 
 CONTEXT="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )/"
 REPO="${CONTEXT}../../../"
@@ -91,7 +92,7 @@ for SAMPLE_NO in $(seq ${NUM_OF_SAMPLES}) ; do
     echo -n "" > "${WORKLOADS_LIST}"
     # Randomize workloads
     for IMAGE in ${TARGET_IMAGES} ; do
-        for MODE in ${LEGACY_MODE} ${ESTARGZ_NOOPT_MODE} ${ESTARGZ_MODE} ; do
+        for MODE in ${LEGACY_MODE} ${ESTARGZ_NOOPT_MODE} ${ESTARGZ_MODE} ${ZSTDCHUNKED_MODE} ; do
             echo "${IMAGE},${MODE}" >> "${WORKLOADS_LIST}"
         done
     done
@@ -126,6 +127,14 @@ for SAMPLE_NO in $(seq ${NUM_OF_SAMPLES}) ; do
             set_noprefetch "false" # enable prefetch
             LOG_FILE="${TMP_LOG_FILE}" "${REBOOT_CONTAINERD_SCRIPT}"
             measure "--mode=estargz" ${TARGET_REPOSITORY} ${IMAGE}
+            check_remote_snapshots "${TMP_LOG_FILE}"
+        fi
+
+        if [ "${MODE}" == "${ZSTDCHUNKED_MODE}" ] ; then
+            echo -n "" > "${TMP_LOG_FILE}"
+            set_noprefetch "false" # enable prefetch
+            LOG_FILE="${TMP_LOG_FILE}" "${REBOOT_CONTAINERD_SCRIPT}"
+            measure "--mode=zstdchunked" ${TARGET_REPOSITORY} ${IMAGE}
             check_remote_snapshots "${TMP_LOG_FILE}"
         fi
     done

@@ -35,6 +35,7 @@ import (
 
 	"github.com/containerd/stargz-snapshotter/cache"
 	"github.com/containerd/stargz-snapshotter/estargz"
+	"github.com/containerd/stargz-snapshotter/zstdchunked"
 	digest "github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
 	"golang.org/x/sync/errgroup"
@@ -88,7 +89,7 @@ func (nv nopVerifier) Verified() bool {
 // It returns VerifiableReader so the caller must provide a estargz.TOCEntryVerifier
 // to use for verifying file or chunk contained in this stargz blob.
 func NewReader(sr *io.SectionReader, cache cache.BlobCache) (*VerifiableReader, *estargz.TOCEntry, error) {
-	r, err := estargz.Open(sr)
+	r, err := estargz.Open(sr, estargz.WithDecompressors(new(zstdchunked.Decompressor)))
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "failed to parse stargz")
 	}
@@ -151,7 +152,10 @@ func (gr *reader) Cache(opts ...CacheOption) (err error) {
 
 	r := gr.r
 	if cacheOpts.reader != nil {
-		if r, err = estargz.Open(cacheOpts.reader); err != nil {
+		if r, err = estargz.Open(cacheOpts.reader,
+			// TODO: apply other options used in NewReader when needed.
+			estargz.WithDecompressors(new(zstdchunked.Decompressor)),
+		); err != nil {
 			return errors.Wrap(err, "failed to parse stargz")
 		}
 	}

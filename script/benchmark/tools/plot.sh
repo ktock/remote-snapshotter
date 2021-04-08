@@ -32,7 +32,7 @@ echo "output into: ${DATADIR}"
 
 MODES=( ${TARGET_MODES:-} )
 if [ ${#MODES[@]} -eq 0 ] ; then
-    MODES=("legacy" "estargz-noopt" "estargz")
+    MODES=("legacy" "estargz-noopt" "estargz" "zstdchunked")
 fi
 
 IMAGES=( ${TARGET_IMAGES:-} )

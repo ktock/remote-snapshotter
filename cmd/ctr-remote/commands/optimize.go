@@ -31,7 +31,9 @@ import (
 	"github.com/containerd/containerd/platforms"
 	"github.com/containerd/stargz-snapshotter/analyzer"
 	"github.com/containerd/stargz-snapshotter/estargz"
+	"github.com/containerd/stargz-snapshotter/nativeconverter"
 	estargzconvert "github.com/containerd/stargz-snapshotter/nativeconverter/estargz"
+	zstdchunkedconvert "github.com/containerd/stargz-snapshotter/nativeconverter/zstdchunked"
 	"github.com/containerd/stargz-snapshotter/recorder"
 	"github.com/containerd/stargz-snapshotter/util/containerdutil"
 	"github.com/opencontainers/go-digest"
@@ -77,6 +79,10 @@ var OptimizeCommand = cli.Command{
 			Name:  "oci",
 			Usage: "convert Docker media types to OCI media types",
 		},
+		cli.BoolFlag{
+			Name:  "zstdchunked",
+			Usage: "use zstd compression instead of gzip (a.k.a zstd:chunked)",
+		},
 	}, samplerFlags...),
 	Action: func(clicontext *cli.Context) error {
 		convertOpts := []converter.Opt{}
@@ -86,7 +92,10 @@ var OptimizeCommand = cli.Command{
 			return errors.New("src and target image need to be specified")
 		}
 
-		if !clicontext.Bool("all-platforms") {
+		var platformMC platforms.MatchComparer
+		if clicontext.Bool("all-platforms") {
+			platformMC = platforms.All
+		} else {
 			if pss := clicontext.StringSlice("platform"); len(pss) > 0 {
 				var all []ocispec.Platform
 				for _, ps := range pss {
@@ -96,15 +105,21 @@ var OptimizeCommand = cli.Command{
 					}
 					all = append(all, p)
 				}
-				convertOpts = append(convertOpts, converter.WithPlatform(platforms.Ordered(all...)))
+				platformMC = platforms.Ordered(all...)
 			} else {
-				convertOpts = append(convertOpts, converter.WithPlatform(platforms.DefaultStrict()))
+				platformMC = platforms.DefaultStrict()
 			}
 		}
+		convertOpts = append(convertOpts, converter.WithPlatform(platformMC))
 
+		var docker2oci bool
 		if clicontext.Bool("oci") {
+			docker2oci = true
 			convertOpts = append(convertOpts, converter.WithDockerToOCI(true))
 		} else {
+			if clicontext.Bool("zstdchunked") {
+				return errors.New("option --zstdchunked must be used in conjunction with --oci")
+			}
 			logrus.Warn("option --oci should be used as well")
 		}
 
@@ -129,12 +144,21 @@ var OptimizeCommand = cli.Command{
 				return errors.Wrapf(err, "failed output record file")
 			}
 		}
-		f := estargzconvert.LayerConvertWithLayerOptsFunc(esgzOptsPerLayer)
+		var f converter.ConvertFunc
+		if clicontext.Bool("zstdchunked") {
+			f = zstdchunkedconvert.LayerConvertWithLayerOptsFunc(esgzOptsPerLayer)
+		} else {
+			f = estargzconvert.LayerConvertWithLayerOptsFunc(esgzOptsPerLayer)
+		}
 		if wrapper != nil {
 			f = wrapper(f)
 		}
-		convertOpts = append(convertOpts, converter.WithLayerConvertFunc(logWrapper(f)))
-
+		layerConvertFunc := logWrapper(f)
+		convertOpts = append(convertOpts, converter.WithLayerConvertFunc(layerConvertFunc))
+		convertOpts = append(convertOpts, converter.WithIndexConvertFunc(
+			// index converter patched for zstd compression
+			// TODO: upstream this to containerd/containerd
+			nativeconverter.IndexConvertFunc(layerConvertFunc, docker2oci, platformMC)))
 		newImg, err := converter.Convert(ctx, client, targetRef, srcRef, convertOpts...)
 		if err != nil {
 			return err

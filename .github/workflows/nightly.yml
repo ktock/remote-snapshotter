@@ -18,42 +18,16 @@ on:
 env:
   DOCKER_BUILDKIT: 1
   DOCKER_BUILD_ARGS: --build-arg=CONTAINERD_VERSION=master # do tests with the latest containerd
+  STARGZ_SNAPSHOTTER_PROJECT_ROOT: ${{ github.workspace }}/src/github.com/containerd/stargz-snapshotter
 
 jobs:
   integration:
     runs-on: ubuntu-20.04
     name: Integration
     steps:
-    - name: Install htpasswd for setting up private registry
-      run: sudo apt-get update -y && sudo apt-get --no-install-recommends install -y apache2-utils
     - uses: actions/checkout@v2
+      with:
+        path: src/github.com/containerd/stargz-snapshotter
     - name: Run integration test
       run: make integration
-
-  test-optimize:
-    runs-on: ubuntu-20.04
-    name: Optimize
-    steps:
-    - name: Install htpasswd for setting up private registry
-      run: sudo apt-get update -y && sudo apt-get --no-install-recommends install -y apache2-utils
-    - uses: actions/checkout@v2
-    - name: Run test for optimize subcommand of ctr-remote
-      run: make test-optimize
-
-  test-pullsecrets:
-    runs-on: ubuntu-20.04
-    name: PullSecrets
-    steps:
-    - name: Install htpasswd for setting up private registry
-      run: sudo apt-get update -y && sudo apt-get --no-install-recommends install -y apache2-utils
-    - uses: actions/checkout@v2
-    - name: Run test for pulling image from private registry on Kubernetes
-      run: make test-pullsecrets
-
-  test-cri:
-    runs-on: ubuntu-20.04
-    name: CRIValidation
-    steps:
-    - uses: actions/checkout@v2
-    - name: Varidate the runtime through CRI
-      run: make test-cri
+      working-directory: src/github.com/containerd/stargz-snapshotter

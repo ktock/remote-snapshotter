@@ -1,6 +1,0 @@
-version = 2
-
-[proxy_plugins]
-  [proxy_plugins.stargz]
-    type = "snapshot"
-    address = "/run/containerd-stargz-grpc/containerd-stargz-grpc.sock"

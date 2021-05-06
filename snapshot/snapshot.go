@@ -40,8 +40,8 @@ import (
 
 const (
 	targetSnapshotLabel = "containerd.io/snapshot.ref"
-	remoteLabel         = "containerd.io/snapshot/remote"
-	remoteLabelVal      = "remote snapshot"
+	RemoteLabel         = "containerd.io/snapshot/remote"
+	RemoteLabelVal      = "remote snapshot"
 
 	// remoteSnapshotLogKey is a key for log line, which indicates whether
 	// `Prepare` method successfully prepared targeting remote snapshot or not, as
@@ -250,7 +250,7 @@ func (o *snapshotter) Prepare(ctx context.Context, key, parent string, opts ...s
 			log.G(lCtx).WithField(remoteSnapshotLogKey, prepareFailed).
 				WithError(err).Debug("failed to prepare remote snapshot")
 		} else {
-			base.Labels[remoteLabel] = remoteLabelVal // Mark this snapshot as remote
+			base.Labels[RemoteLabel] = RemoteLabelVal // Mark this snapshot as remote
 			err := o.Commit(ctx, target, key, append(opts, snapshots.WithLabels(base.Labels))...)
 			if err == nil || errdefs.IsAlreadyExists(err) {
 				// count also AlreadyExists as "success"
@@ -682,7 +682,7 @@ func (o *snapshotter) checkAvailability(ctx context.Context, key string) bool {
 		}
 		mp := o.upperPath(id)
 		lCtx := log.WithLogger(ctx, log.G(ctx).WithField("mount-point", mp))
-		if _, ok := info.Labels[remoteLabel]; ok {
+		if _, ok := info.Labels[RemoteLabel]; ok {
 			eg.Go(func() error {
 				log.G(lCtx).Debug("checking mount point")
 				if err := o.fs.Check(egCtx, mp, info.Labels); err != nil {
@@ -717,7 +717,7 @@ func (o *snapshotter) restoreRemoteSnapshot(ctx context.Context) error {
 
 	var task []snapshots.Info
 	if err := o.Walk(ctx, func(ctx context.Context, info snapshots.Info) error {
-		if _, ok := info.Labels[remoteLabel]; ok {
+		if _, ok := info.Labels[RemoteLabel]; ok {
 			task = append(task, info)
 		}
 		return nil

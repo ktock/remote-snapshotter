@@ -1,0 +1,18 @@
+# See also: https://github.com/kubernetes-sigs/kind/blob/fd64a56b0c3d5654eb6d22bce812e2a87eac5853/images/base/files/etc/containerd/config.toml
+
+# explicitly use v2 config format
+version = 2
+
+# - Set default runtime handler to v2, which has a per-pod shim
+# - Enable to use stargz snapshotter
+[plugins."io.containerd.grpc.v1.cri".containerd]
+  default_runtime_name = "runc"
+  snapshotter = "stargz"
+  disable_snapshot_annotations = false
+[plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc]
+  runtime_type = "io.containerd.runc.v2"
+
+# Setup a runtime with the magic name ("test-handler") used for Kubernetes
+# runtime class tests ...
+[plugins."io.containerd.grpc.v1.cri".containerd.runtimes.test-handler]
+  runtime_type = "io.containerd.runc.v2"

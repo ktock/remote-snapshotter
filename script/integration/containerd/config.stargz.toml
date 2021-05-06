@@ -1,6 +1,0 @@
-[blob]
-check_always = true
-
-[[resolver.host."registry-integration.test".mirrors]]
-host = "registry-alt.test:5000"
-insecure = true

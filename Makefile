@@ -64,26 +64,19 @@ clean:
 
 test:
 	@echo "$@"
-	@GO111MODULE=$(GO111MODULE_VALUE) go test -race ./...
-	@cd ./estargz ; GO111MODULE=$(GO111MODULE_VALUE) go test -race ./...
+	@GO111MODULE=$(GO111MODULE_VALUE) ENABLE_INTEGRATION_TEST=false go test $(GO_TEST_FLAGS) -race ./...
+	@cd ./estargz ; GO111MODULE=$(GO111MODULE_VALUE) go test $(GO_TEST_FLAGS) -race ./...
 
 test-root:
 	@echo "$@"
-	@GO111MODULE=$(GO111MODULE_VALUE) go test -race ./snapshot -test.root
+	@GO111MODULE=$(GO111MODULE_VALUE) go test $(GO_TEST_FLAGS) -race ./snapshot -test.root
 
 test-all: test-root test
 
 integration:
-	@./script/integration/test.sh
-
-test-optimize:
-	@./script/optimize/test.sh
+	@echo "$@"
+	@GO111MODULE=$(GO111MODULE_VALUE) ENABLE_INTEGRATION_TEST=true go test $(GO_TEST_FLAGS) -v -timeout=0 ./integration
 
 benchmark:
-	@./script/benchmark/test.sh
-
-test-pullsecrets:
-	@./script/pullsecrets/test.sh
-
-test-cri:
-	@./script/cri/test.sh
+	@echo "$@"
+	@GO111MODULE=$(GO111MODULE_VALUE) go test -v -timeout=0 ./benchmark

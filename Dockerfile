@@ -25,7 +25,9 @@ FROM golang:1.15-buster AS golang-base
 # Build containerd
 FROM golang-base AS containerd-dev
 ARG CONTAINERD_VERSION
-RUN apt-get update -y && apt-get install -y libbtrfs-dev libseccomp-dev && \
+RUN --mount=type=cache,target=/root/.cache/go-build \
+    --mount=type=cache,target=/go/pkg/mod \
+    apt-get update -y && apt-get install -y libbtrfs-dev libseccomp-dev && \
     git clone -b ${CONTAINERD_VERSION} --depth 1 \
               https://github.com/containerd/containerd $GOPATH/src/github.com/containerd/containerd && \
     cd $GOPATH/src/github.com/containerd/containerd && \
@@ -35,7 +37,9 @@ RUN apt-get update -y && apt-get install -y libbtrfs-dev libseccomp-dev && \
 FROM golang-base AS containerd-snapshotter-dev
 ARG CONTAINERD_VERSION
 COPY . $GOPATH/src/github.com/containerd/stargz-snapshotter
-RUN apt-get update -y && apt-get install -y libbtrfs-dev libseccomp-dev && \
+RUN --mount=type=cache,target=/root/.cache/go-build \
+    --mount=type=cache,target=/go/pkg/mod \
+    apt-get update -y && apt-get install -y libbtrfs-dev libseccomp-dev && \
     git clone -b ${CONTAINERD_VERSION} --depth 1 \
               https://github.com/containerd/containerd $GOPATH/src/github.com/containerd/containerd && \
     echo 'require github.com/containerd/stargz-snapshotter v0.0.0\nreplace github.com/containerd/stargz-snapshotter => '$GOPATH'/src/github.com/containerd/stargz-snapshotter\nreplace github.com/containerd/stargz-snapshotter/estargz => '$GOPATH'/src/github.com/containerd/stargz-snapshotter/estargz' \
@@ -48,7 +52,9 @@ RUN apt-get update -y && apt-get install -y libbtrfs-dev libseccomp-dev && \
 # Build runc
 FROM golang-base AS runc-dev
 ARG RUNC_VERSION
-RUN apt-get update -y && apt-get install -y libseccomp-dev && \
+RUN --mount=type=cache,target=/root/.cache/go-build \
+    --mount=type=cache,target=/go/pkg/mod \
+    apt-get update -y && apt-get install -y libseccomp-dev && \
     git clone -b ${RUNC_VERSION} --depth 1 \
               https://github.com/opencontainers/runc $GOPATH/src/github.com/opencontainers/runc && \
     cd $GOPATH/src/github.com/opencontainers/runc && \
@@ -61,7 +67,9 @@ ARG GOARM
 ARG SNAPSHOTTER_BUILD_FLAGS
 ARG CTR_REMOTE_BUILD_FLAGS
 COPY . $GOPATH/src/github.com/containerd/stargz-snapshotter
-RUN cd $GOPATH/src/github.com/containerd/stargz-snapshotter && \
+RUN --mount=type=cache,target=/root/.cache/go-build \
+    --mount=type=cache,target=/go/pkg/mod \
+    cd $GOPATH/src/github.com/containerd/stargz-snapshotter && \
     PREFIX=/out/ GOARCH=${TARGETARCH:-amd64} GO_BUILD_FLAGS=${SNAPSHOTTER_BUILD_FLAGS} make containerd-stargz-grpc && \
     PREFIX=/out/ GOARCH=${TARGETARCH:-amd64} GO_BUILD_FLAGS=${CTR_REMOTE_BUILD_FLAGS} make ctr-remote
 
@@ -114,7 +122,7 @@ RUN apt-get update && apt-get install -y iptables && \
 FROM kindest/node:v1.20.0 AS kind-builtin-snapshotter
 COPY --from=containerd-snapshotter-dev /out/bin/containerd /out/bin/containerd-shim-runc-v2 /usr/local/bin/
 COPY --from=snapshotter-dev /out/ctr-remote /usr/local/bin/
-COPY ./script/config/ /
+COPY ./script/config-builtin/ /
 RUN apt-get update -y && apt-get install --no-install-recommends -y fuse
 ENTRYPOINT [ "/usr/local/bin/entrypoint", "/sbin/init" ]
 

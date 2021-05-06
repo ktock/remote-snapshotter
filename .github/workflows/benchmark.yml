@@ -9,29 +9,35 @@ jobs:
     runs-on: ubuntu-20.04
     name: HelloBench
     env:
-      BENCHMARK_LOG_DIR: ${{ github.workspace }}/log/
-      BENCHMARK_RESULT_DIR: ${{ github.workspace }}/benchmark/
-      BENCHMARK_REGISTRY: ghcr.io
-      BENCHMARK_USER: stargz-containers
+      BENCHMARK_LOG_FILE: ${{ github.workspace }}/run.log
+      BENCHMARK_RESULT_DIR: ${{ github.workspace }}/benchmark-result/
+      BENCHMARK_TARGET_REPOSITORY: ghcr.io/stargz-containers
       BENCHMARK_TARGETS: python:3.9 gcc:10.2.0 postgres:13.1 tomcat:10.0.0-jdk15-openjdk-buster
       BENCHMARK_SAMPLES_NUM: 5
       BENCHMARK_PERCENTILE: 95
-      BENCHMARK_PERCENTILES_GRANULARITY: 25
+      BENCHMARK_PERCENTILE_GRANULARITY: 25
     steps:
     - name: Install tools
       run: |
           sudo apt-get update && sudo apt-get --no-install-recommends install -y gnuplot
           pip install numpy
     - uses: actions/checkout@v2
+      with:
+        path: src/github.com/containerd/stargz-snapshotter
     - name: Prepare directories
-      run: mkdir "${BENCHMARK_RESULT_DIR}" "${BENCHMARK_LOG_DIR}"
+      run: mkdir -p "${BENCHMARK_RESULT_DIR}"
     - name: Get instance information
       run: |
           curl -H "Metadata:true" "http://169.254.169.254/metadata/instance?api-version=2019-11-01" | \
           jq '{ location : .compute.location, vmSize : .compute.vmSize }' | \
           tee ${{ env.BENCHMARK_RESULT_DIR }}/instance.json
     - name: Run benchmark
+      env:
+        STARGZ_SNAPSHOTTER_PROJECT_ROOT: ${{ github.workspace }}/src/github.com/containerd/stargz-snapshotter
       run: make benchmark
+      working-directory: src/github.com/containerd/stargz-snapshotter
+    - name: Export log
+      run: tar zcf ${{ env.BENCHMARK_RESULT_DIR }}/run.log.tar.gz ${{ env.BENCHMARK_LOG_FILE }}
     - uses: actions/upload-artifact@v1
       if: ${{ always() }}
       with:

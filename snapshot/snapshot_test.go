@@ -60,7 +60,7 @@ func TestRemotePrepare(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer os.RemoveAll(root)
-	sn, err := NewSnapshotter(context.TODO(), root, bindFileSystem(t))
+	sn, err := NewSnapshotter(context.TODO(), root, bindFileSystem(t), CleanupCommitted, RestoreSnapshots)
 	if err != nil {
 		t.Fatalf("failed to make new remote snapshotter: %q", err)
 	}
@@ -111,7 +111,7 @@ func TestRemoteOverlay(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer os.RemoveAll(root)
-	sn, err := NewSnapshotter(context.TODO(), root, bindFileSystem(t))
+	sn, err := NewSnapshotter(context.TODO(), root, bindFileSystem(t), CleanupCommitted, RestoreSnapshots)
 	if err != nil {
 		t.Fatalf("failed to make new remote snapshotter: %q", err)
 	}
@@ -170,7 +170,7 @@ func TestRemoteCommit(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer os.RemoveAll(root)
-	sn, err := NewSnapshotter(context.TODO(), root, bindFileSystem(t))
+	sn, err := NewSnapshotter(context.TODO(), root, bindFileSystem(t), CleanupCommitted, RestoreSnapshots)
 	if err != nil {
 		t.Fatalf("failed to make new remote snapshotter: %q", err)
 	}
@@ -313,7 +313,7 @@ func TestFailureDetection(t *testing.T) {
 			}
 			defer os.RemoveAll(root)
 			fi := bindFileSystem(t)
-			sn, err := NewSnapshotter(context.TODO(), root, fi)
+			sn, err := NewSnapshotter(context.TODO(), root, fi, CleanupCommitted, RestoreSnapshots)
 			if err != nil {
 				t.Fatalf("failed to make new Snapshotter: %q", err)
 			}
@@ -439,7 +439,8 @@ func (fs *dummyFs) Unmount(ctx context.Context, mountpoint string) error {
 // Tests backword-comaptibility of overlayfs snapshotter.
 
 func newSnapshotter(ctx context.Context, root string) (snapshots.Snapshotter, func() error, error) {
-	snapshotter, err := NewSnapshotter(context.TODO(), root, dummyFileSystem())
+	snapshotter, err := NewSnapshotter(context.TODO(), root, dummyFileSystem(),
+		CleanupCommitted, RestoreSnapshots)
 	if err != nil {
 		return nil, nil, err
 	}

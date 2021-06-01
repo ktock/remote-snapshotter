@@ -24,6 +24,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"time"
@@ -34,11 +35,13 @@ import (
 	"github.com/containerd/containerd/log"
 	"github.com/containerd/containerd/pkg/dialer"
 	"github.com/containerd/containerd/snapshots"
+	"github.com/containerd/stargz-snapshotter/fusemanager"
 	"github.com/containerd/stargz-snapshotter/service"
 	"github.com/containerd/stargz-snapshotter/service/keychain/cri"
 	"github.com/containerd/stargz-snapshotter/service/keychain/dockerconfig"
 	"github.com/containerd/stargz-snapshotter/service/keychain/kubeconfig"
 	"github.com/containerd/stargz-snapshotter/service/resolver"
+	snbase "github.com/containerd/stargz-snapshotter/snapshot"
 	"github.com/containerd/stargz-snapshotter/version"
 	sddaemon "github.com/coreos/go-systemd/v22/daemon"
 	metrics "github.com/docker/go-metrics"
@@ -57,14 +60,19 @@ const (
 	defaultLogLevel            = logrus.InfoLevel
 	defaultRootDir             = "/var/lib/containerd-stargz-grpc"
 	defaultImageServiceAddress = "/run/containerd/containerd.sock"
+	defaultFuseManagerAddress  = "/run/containerd-stargz-grpc/fuse-namanger.sock"
+
+	fuseManagerBin     = "stargz-fuse-manager"
+	fuseManagerAddress = "fuse-mananger.sock"
 )
 
 var (
-	address      = flag.String("address", defaultAddress, "address for the snapshotter's GRPC server")
-	configPath   = flag.String("config", defaultConfigPath, "path to the configuration file")
-	logLevel     = flag.String("log-level", defaultLogLevel.String(), "set the logging level [trace, debug, info, warn, error, fatal, panic]")
-	rootDir      = flag.String("root", defaultRootDir, "path to the root directory for this snapshotter")
-	printVersion = flag.Bool("version", false, "print the version")
+	address           = flag.String("address", defaultAddress, "address for the snapshotter's GRPC server")
+	configPath        = flag.String("config", defaultConfigPath, "path to the configuration file")
+	logLevel          = flag.String("log-level", defaultLogLevel.String(), "set the logging level [trace, debug, info, warn, error, fatal, panic]")
+	rootDir           = flag.String("root", defaultRootDir, "path to the root directory for this snapshotter")
+	detachFuseManager = flag.Bool("detach-fuse-manager", false, "whether detach fusemanager or not")
+	printVersion      = flag.Bool("version", false, "print the version")
 )
 
 type snapshotterConfig struct {
@@ -72,6 +80,12 @@ type snapshotterConfig struct {
 
 	// MetricsAddress is address for the metrics API
 	MetricsAddress string `toml:"metrics_address"`
+
+	// FuseManagerAddress is address for the fusemanager's GRPC server
+	FuseManagerAddress string `toml:"fusemanager_address"`
+
+	// FuseManagerPath is path to the fusemanager's executable
+	FuseManagerPath string `toml:"fusemanager_path"`
 }
 
 func main() {
@@ -153,9 +167,44 @@ func main() {
 		runtime.RegisterImageServiceServer(rpc, criServer)
 		credsFuncs = append(credsFuncs, f)
 	}
-	rs, err := service.NewStargzSnapshotterService(ctx, *rootDir, &config.Config, service.WithCredsFuncs(credsFuncs...))
-	if err != nil {
-		log.G(ctx).WithError(err).Fatalf("failed to configure snapshotter")
+
+	var rs snapshots.Snapshotter
+	if *detachFuseManager {
+		fmPath := config.FuseManagerPath
+		if fmPath == "" {
+			var err error
+			fmPath, err = exec.LookPath(fuseManagerBin)
+			if err != nil {
+				log.G(ctx).WithError(err).Fatalf("failed to find fusemanager bin")
+			}
+		}
+		fmAddr := config.FuseManagerAddress
+		if fmAddr == "" {
+			var err error
+			fmAddr, err = exec.LookPath(fuseManagerAddress)
+			if err != nil {
+				fmAddr = defaultFuseManagerAddress
+			}
+		}
+		err := service.StartFuseManager(ctx, fmPath, fmAddr, filepath.Join(*rootDir, "fusestore.db"), *logLevel, filepath.Join(*rootDir, "stargz-fuse-manager.log"))
+		if err != nil {
+			log.G(ctx).WithError(err).Fatalf("failed to start fusemanager")
+		}
+		fs, err := fusemanager.NewManagerClient(ctx, *rootDir, fmAddr, &config.Config)
+		if err != nil {
+			log.G(ctx).WithError(err).Fatalf("failed to configure fusemanager")
+		}
+		rs, err = snbase.NewSnapshotter(ctx, filepath.Join(*rootDir, "snapshotter"), fs, snbase.AsynchronousRemove)
+		if err != nil {
+			log.G(ctx).WithError(err).Fatalf("failed to configure snapshotter")
+		}
+		log.G(ctx).Infof("Start snapshotter with fusemanager mode")
+	} else {
+		rs, err = service.NewStargzSnapshotterService(ctx, *rootDir, &config.Config, service.WithCredsFuncs(credsFuncs...))
+		if err != nil {
+			log.G(ctx).WithError(err).Fatalf("failed to configure snapshotter")
+		}
+		log.G(ctx).Infof("Start snapshotter with builtin mode")
 	}
 
 	cleanup, err := serve(ctx, rpc, *address, rs, config)

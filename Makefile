@@ -23,7 +23,7 @@ VERSION=$(shell git describe --match 'v[0-9]*' --dirty='.m' --always --tags)
 REVISION=$(shell git rev-parse HEAD)$(shell if ! git diff --no-ext-diff --quiet --exit-code; then echo .m; fi)
 GO_LD_FLAGS=-ldflags '-s -w -X $(PKG)/version.Version=$(VERSION) -X $(PKG)/version.Revision=$(REVISION) $(GO_EXTRA_LDFLAGS)'
 
-CMD=containerd-stargz-grpc ctr-remote stargz-store
+CMD=containerd-stargz-grpc ctr-remote stargz-store stargz-fuse-manager
 
 CMD_BINARIES=$(addprefix $(PREFIX),$(CMD))
 
@@ -43,6 +43,9 @@ ctr-remote: FORCE
 
 stargz-store: FORCE
 	GO111MODULE=$(GO111MODULE_VALUE) go build -o $(PREFIX)$@ $(GO_BUILD_FLAGS) $(GO_LD_FLAGS) -v ./cmd/stargz-store
+
+stargz-fuse-manager: FORCE
+	GO111MODULE=$(GO111MODULE_VALUE) go build -o $(PREFIX)$@ $(GO_BUILD_FLAGS) $(GO_LD_FLAGS) -v ./cmd/stargz-fuse-manager
 
 check:
 	@echo "$@"

@@ -73,7 +73,9 @@ type FileSystem interface {
 
 // SnapshotterConfig is used to configure the remote snapshotter instance
 type SnapshotterConfig struct {
-	asyncRemove bool
+	asyncRemove      bool
+	cleanupCommitted bool
+	restoreSnapshots bool
 }
 
 // Opt is an option to configure the remote snapshotter
@@ -88,10 +90,24 @@ func AsynchronousRemove(config *SnapshotterConfig) error {
 	return nil
 }
 
+// CleanupCommitted cleans committed snapshots when closing snapshotter
+func CleanupCommitted(config *SnapshotterConfig) error {
+	config.cleanupCommitted = true
+	return nil
+}
+
+// RestoreSnapshots indicates whether restore snapshots when
+// starting snapshotter
+func RestoreSnapshots(config *SnapshotterConfig) error {
+	config.restoreSnapshots = true
+	return nil
+}
+
 type snapshotter struct {
-	root        string
-	ms          *storage.MetaStore
-	asyncRemove bool
+	root             string
+	ms               *storage.MetaStore
+	asyncRemove      bool
+	cleanupCommitted bool
 
 	// fs is a filesystem that this snapshotter recognizes.
 	fs        FileSystem
@@ -146,8 +162,10 @@ func NewSnapshotter(ctx context.Context, root string, targetFs FileSystem, opts 
 		userxattr:   userxattr,
 	}
 
-	if err := o.restoreRemoteSnapshot(ctx); err != nil {
-		return nil, errors.Wrap(err, "failed to restore remote snapshot")
+	if config.restoreSnapshots {
+		if err := o.restoreRemoteSnapshot(ctx); err != nil {
+			return nil, errors.Wrap(err, "failed to restore remote snapshot")
+		}
 	}
 
 	return o, nil
@@ -632,9 +650,8 @@ func (o *snapshotter) workPath(id string) string {
 // Close closes the snapshotter
 func (o *snapshotter) Close() error {
 	// unmount all mounts including Committed
-	const cleanupCommitted = true
 	ctx := context.Background()
-	if err := o.cleanup(ctx, cleanupCommitted); err != nil {
+	if err := o.cleanup(ctx, o.cleanupCommitted); err != nil {
 		log.G(ctx).WithError(err).Warn("failed to cleanup")
 	}
 	return o.ms.Close()

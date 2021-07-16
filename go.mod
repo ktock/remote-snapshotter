@@ -31,8 +31,8 @@ require (
 	golang.org/x/sync v0.0.0-20201207232520-09787c993a3a
 	golang.org/x/sys v0.0.0-20210603081109-ebe580a85c40
 	google.golang.org/grpc v1.39.0
-	k8s.io/api v0.21.2
-	k8s.io/apimachinery v0.21.2
+	k8s.io/api v0.21.3
+	k8s.io/apimachinery v0.21.3
 	k8s.io/client-go v0.21.2
 	k8s.io/cri-api v0.21.2
 )
